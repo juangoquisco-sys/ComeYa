@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RestaurantStatus {
+  REFERENCE
+  PENDING_REVIEW
+  PUBLISHED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum MenuItemStatus {
+  DRAFT
+  AVAILABLE
+  UNAVAILABLE
+  ARCHIVED
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INVITED
+}
+
+enum RestaurantMemberRole {
+  OWNER
+  MANAGER
+  STAFF
+}
+
+enum CourierStatus {
+  PENDING
+  APPROVED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum OperatorRole {
+  ADMIN
+  OPERATIONS
+  FINANCE
+  SUPPORT
+}
+
+enum RestaurantApplicationStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+model User {
+  id                    String                 @id @default(cuid())
+  email                 String                 @unique
+  displayName           String
+  passwordHash          String
+  status                UserStatus             @default(ACTIVE)
+  restaurantMemberships RestaurantMembership[]
+  courierProfile        CourierProfile?
+  operatorMembership    OperatorMembership?
+  restaurantApplications RestaurantApplication[] @relation("RestaurantApplicant")
+  reviewedRestaurantApplications RestaurantApplication[] @relation("RestaurantApplicationReviewer")
+  sessions              Session[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+}
+
+model Restaurant {
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  name          String
+  cuisine       String
+  zone          String
+  address       String?
+  status        RestaurantStatus @default(REFERENCE)
+  sourceLabel   String?
+  sourceRef     String?
+  publishedAt   DateTime?
+  memberships   RestaurantMembership[]
+  applications  RestaurantApplication[]
+  menuCategories MenuCategory[]
+  menuItems     MenuItem[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([status, zone])
+}
+
+model RestaurantApplication {
+  id            String                      @id @default(cuid())
+  applicantId   String
+  restaurantId  String?
+  businessName  String
+  cuisine       String
+  zone          String
+  address       String
+  applicantRole String
+  status        RestaurantApplicationStatus @default(PENDING)
+  reviewNote    String?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  applicant     User                        @relation("RestaurantApplicant", fields: [applicantId], references: [id], onDelete: Cascade)
+  reviewer      User?                       @relation("RestaurantApplicationReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  restaurant    Restaurant?                 @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  createdAt     DateTime                    @default(now())
+  updatedAt     DateTime                    @updatedAt
+
+  @@index([applicantId, status])
+  @@index([status, createdAt])
+}
+
+model RestaurantMembership {
+  id           String               @id @default(cuid())
+  userId       String
+  restaurantId String
+  role         RestaurantMemberRole
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  restaurant   Restaurant           @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@unique([userId, restaurantId])
+  @@index([restaurantId, role])
+}
+
+model CourierProfile {
+  id        String        @id @default(cuid())
+  userId    String        @unique
+  status    CourierStatus @default(PENDING)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model OperatorMembership {
+  id        String       @id @default(cuid())
+  userId    String       @unique
+  role      OperatorRole
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  lastSeenAt DateTime @default(now())
+  revokedAt DateTime?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model MenuCategory {
+  id           String       @id @default(cuid())
+  restaurantId String
+  name         String
+  sortOrder    Int          @default(0)
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  menuItems    MenuItem[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([restaurantId, name])
+  @@index([restaurantId, sortOrder])
+}
+
+model MenuItem {
+  id           String         @id @default(cuid())
+  restaurantId String
+  categoryId   String?
+  name         String
+  description  String?
+  price        Decimal        @db.Decimal(10, 2)
+  currency     String         @default("PEN") @db.Char(3)
+  status       MenuItemStatus @default(DRAFT)
+  restaurant   Restaurant     @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  category     MenuCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([restaurantId, status])
+}
